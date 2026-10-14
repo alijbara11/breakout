@@ -1,0 +1,1298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Breakout</title>
+<style>
+  :root {
+    --bg: #0f1020;
+    --panel: #1a1c33;
+    --text: #e8e8f0;
+    --muted: #a3a5c4;
+    --accent: #5ad1ff;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  body {
+    background:
+      radial-gradient(circle at 15% 20%, rgba(255, 92, 122, 0.25), transparent 40%),
+      radial-gradient(circle at 85% 30%, rgba(90, 209, 255, 0.25), transparent 40%),
+      radial-gradient(circle at 50% 90%, rgba(167, 139, 255, 0.3), transparent 45%),
+      linear-gradient(135deg, #12052b, #0b1a3d, #2b0a2b, #0a2433);
+    background-size: 100% 100%, 100% 100%, 100% 100%, 400% 400%;
+    background-attachment: fixed;
+    animation: page-shift 20s ease-in-out infinite;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 16px;
+    gap: 12px;
+  }
+  @keyframes page-shift {
+    0%, 100% { background-position: 0 0, 0 0, 0 0, 0% 50%; }
+    50% { background-position: 0 0, 0 0, 0 0, 100% 50%; }
+  }
+  h1 {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 900;
+    letter-spacing: 0.2em;
+    background: linear-gradient(90deg, #ff5c7a, #ff8f4d, #ffd24d, #7ee07e, #5ad1ff, #a78bff, #ff5c7a);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: title-flow 4s linear infinite;
+    filter: drop-shadow(0 0 12px rgba(255, 143, 77, 0.5));
+  }
+  @keyframes title-flow { to { background-position: 200% center; } }
+
+  /* Boards: one in 1-player mode, two side by side in 2-player mode */
+  #arena {
+    position: relative;
+    display: flex;
+    gap: 16px;
+    width: 100%;
+    max-width: 800px;
+  }
+  body.two-players #arena { max-width: 1400px; }
+  @media (max-width: 760px) {
+    body.two-players #arena { flex-direction: column; }
+  }
+  .board {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .board[hidden] { display: none; }
+  .hud {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px 20px;
+    font-size: 0.95rem;
+    color: var(--muted);
+  }
+  .hud b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .hud .pname { font-weight: 800; color: #ffd24d; }
+  .hud .pname:empty { display: none; }
+  .hud [hidden] { display: none; }
+  canvas {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background: var(--panel);
+    border-radius: 10px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 30px rgba(90, 209, 255, 0.35);
+    animation: frame-glow 6s linear infinite;
+  }
+  @keyframes frame-glow {
+    0%, 100% { box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 30px rgba(90, 209, 255, 0.45); }
+    33% { box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 30px rgba(255, 92, 122, 0.45); }
+    66% { box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 30px rgba(167, 139, 255, 0.45); }
+  }
+
+  /* Start / results menu, floating over the boards */
+  #menu-layer {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+  }
+  #menu-layer[hidden] { display: none; }
+  #menu {
+    width: min(100%, 420px);
+    padding: 22px 22px 18px;
+    background: rgba(15, 16, 32, 0.88);
+    border: 2px solid rgba(167, 139, 255, 0.6);
+    border-radius: 16px;
+    box-shadow: 0 0 40px rgba(167, 139, 255, 0.35);
+    text-align: center;
+  }
+  #menu h2 { margin: 0 0 4px; font-size: 1.9rem; font-weight: 900; color: #ffd24d; }
+  #menu-sub { margin: 0 0 14px; color: var(--muted); min-height: 1.2em; }
+  .mode-toggle {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+    padding: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+  }
+  .mode-toggle button {
+    flex: 1;
+    padding: 8px;
+    font: inherit;
+    font-weight: 700;
+    color: var(--muted);
+    background: transparent;
+    border: none;
+    border-radius: 9px;
+    cursor: pointer;
+  }
+  .mode-toggle button.active { color: #0f1020; background: #a78bff; }
+  #menu-form { display: flex; flex-direction: column; gap: 8px; }
+  #menu-form label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--muted);
+    text-align: left;
+  }
+  #menu-form label[hidden] { display: none; }
+  #menu-form label span { width: 64px; flex: none; }
+  #menu-form input {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 14px;
+    font: inherit;
+    font-size: 1rem;
+    color: var(--text);
+    background: rgba(15, 16, 32, 0.85);
+    border: 2px solid #a78bff;
+    border-radius: 10px;
+    outline: none;
+  }
+  #menu-form input:focus { border-color: #ffd24d; box-shadow: 0 0 12px rgba(255, 210, 77, 0.5); }
+  #start-btn {
+    margin-top: 4px;
+    padding: 12px 18px;
+    font: inherit;
+    font-size: 1.05rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    color: #0f1020;
+    background: linear-gradient(90deg, #ffd24d, #ff8f4d);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  #start-btn:hover, #start-btn:focus-visible { filter: brightness(1.1); outline: 2px solid #fff; }
+  #menu { max-height: 100%; overflow-y: auto; }
+  .menu-box {
+    margin-top: 12px;
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--muted);
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+  }
+  .menu-box h3 { margin: 0 0 4px; font-size: 0.85rem; color: #ffd24d; }
+  .menu-box ul { margin: 0; padding-left: 18px; }
+  .menu-box b { color: var(--text); }
+  .menu-box kbd {
+    display: inline-block;
+    padding: 0 5px;
+    font: inherit;
+    font-weight: 700;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+  }
+  #help { font-size: 0.85rem; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+  <h1>BREAKOUT</h1>
+
+  <div id="arena">
+    <div class="board" id="board1">
+      <div class="hud">
+        <span class="pname" data-hud="name"></span>
+        <span>Score <b data-hud="score">0</b></span>
+        <span>Lives <b data-hud="lives">3</b></span>
+        <span>Level <b data-hud="level">1</b></span>
+        <span data-hud="best-wrap">Best <b data-hud="best">0</b></span>
+        <span>Turbo <b data-hud="turbo">–</b></span>
+      </div>
+      <canvas width="800" height="600"></canvas>
+    </div>
+    <div class="board" id="board2" hidden>
+      <div class="hud">
+        <span class="pname" data-hud="name"></span>
+        <span>Score <b data-hud="score">0</b></span>
+        <span>Lives <b data-hud="lives">3</b></span>
+        <span>Level <b data-hud="level">1</b></span>
+        <span data-hud="best-wrap" hidden>Best <b data-hud="best">0</b></span>
+        <span>Turbo <b data-hud="turbo">–</b></span>
+      </div>
+      <canvas width="800" height="600"></canvas>
+    </div>
+
+    <div id="menu-layer">
+      <div id="menu">
+        <h2 id="menu-title">Ready to play?</h2>
+        <p id="menu-sub">Choose a mode and enter your name</p>
+        <div class="mode-toggle" role="group" aria-label="Number of players">
+          <button type="button" data-players="1" class="active">1 Player</button>
+          <button type="button" data-players="2">2 Players</button>
+        </div>
+        <form id="menu-form">
+          <label><span id="name1-label">Name</span><input id="name1" type="text" maxlength="16" placeholder="Type your name" autocomplete="off"></label>
+          <label id="name2-row" hidden><span>Player 2</span><input id="name2" type="text" maxlength="16" placeholder="Player 2 name" autocomplete="off"></label>
+          <button id="start-btn" type="submit">START</button>
+        </form>
+        <div class="menu-box" id="menu-rules"></div>
+        <div class="menu-box" id="menu-controls"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="help">Break a path through the bricks and get the ball past the yellow line to level up! &nbsp;·&nbsp; Pause: P</div>
+
+<script>
+(() => {
+  const W = 800, H = 600;
+
+  // Row colors and points: top rows are worth more.
+  const ROWS = [
+    { color: '#ff5c7a', points: 70 },
+    { color: '#ff8f4d', points: 60 },
+    { color: '#ffd24d', points: 50 },
+    { color: '#7ee07e', points: 40 },
+    { color: '#5ad1ff', points: 30 },
+    { color: '#a78bff', points: 20 },
+  ];
+  const BRICK_GAP = 6;
+  const BRICK_TOP = 70;
+  // Break a path through the bricks and get the ball past this line to level up.
+  const LEVEL_LINE_Y = BRICK_TOP - 14;
+  const MAX_LEVEL = 5;
+
+  // Each level makes the bricks and the paddle smaller, so the game gets harder.
+  const LEVELS = [
+    { cols: 10, brickH: 22, paddleW: 110 },
+    { cols: 12, brickH: 20, paddleW: 95 },
+    { cols: 14, brickH: 18, paddleW: 82 },
+    { cols: 16, brickH: 16, paddleW: 70 },
+    { cols: 18, brickH: 14, paddleW: 60 },
+  ];
+
+  // Splitter bricks: a random few shatter into smaller bricks that fly off to random spots.
+  const SPLITTER_CHANCE = 0.2;
+  const SPLIT_PIECES = 3;      // how many smaller bricks a splitter breaks into
+  const PIECE_FLY = 0.35;      // seconds a piece flies to its new spot (it can't be hit until it lands)
+  const PIECE_ZONE_BOTTOM = H - 130;  // pieces can land anywhere from the top of the bricks down to here (just above the paddle)
+
+  const PADDLE_H = 14, PADDLE_Y = H - 40;
+  const PADDLE_SPEED = 10;
+  const BALL_R = 8;
+  const MINI_R = 5;
+  const BASE_SPEED = 6;
+
+  // Turbo: earned, stored, and fired whenever the player chooses.
+  const TURBO_MAX = 3;
+  const TURBO_DURATION = 6;      // seconds
+  const TURBO_SPEED = 1.6;       // ball speed multiplier
+  const TURBO_COMBO_CHANCE = 0.35; // chance per 2-brick combo
+  const TURBO_FREE_EVERY = 15;   // a guaranteed charge every 15 seconds of play
+
+  // Split: at a random moment the ball bursts into small colored balls.
+  const SPLIT_COUNT = 6;
+  const SPLIT_MIN = 15, SPLIT_MAX = 35; // seconds between splits
+  const MINI_COLORS = ['#ff5c7a', '#ff8f4d', '#ffd24d', '#7ee07e', '#5ad1ff', '#a78bff'];
+
+  // Controls: one player uses the arrows + Space. In 2-player mode each player gets their own
+  // launch key so nobody has to share Space: player 1 = A / D / W + Left Shift,
+  // player 2 = arrows + Right Shift.
+  const SOLO = { left: 'ArrowLeft', right: 'ArrowRight', action: 'ArrowUp', label: '↑', launch: 'Space', launchLabel: 'Space' };
+  const P1_KEYS = { left: 'KeyA', right: 'KeyD', action: 'KeyW', label: 'W', launch: 'ShiftLeft', launchLabel: 'Left Shift' };
+  const P2_KEYS = { left: 'ArrowLeft', right: 'ArrowRight', action: 'ArrowUp', label: '↑', launch: 'ShiftRight', launchLabel: 'Right Shift' };
+
+  const storage = {
+    get(key) { try { return localStorage.getItem(key) || ''; } catch (e) { return ''; } },
+    set(key, value) { try { localStorage.setItem(key, value); } catch (e) {} },
+  };
+  let best = Number(storage.get('breakout-best')) || 0;
+
+  // ---------- Sound ----------
+  // Everything is generated in the browser: Web Audio for effects, speechSynthesis for the voice.
+  let audioCtx = null;
+
+  function ensureAudio() {
+    // Browsers only allow audio after a user gesture, so this runs on the first key press / click.
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  function tone(freq, duration, type = 'square', volume = 0.15, delay = 0, endFreq = null) {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime + delay;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    if (endFreq) osc.frequency.exponentialRampToValueAtTime(endFreq, t + duration);
+    gain.gain.setValueAtTime(volume, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + duration);
+  }
+
+  function speak(text) {
+    if (!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    const msg = new SpeechSynthesisUtterance(text);
+    msg.rate = 1;
+    msg.pitch = 1.1;
+    speechSynthesis.speak(msg);
+  }
+
+  const sfx = {
+    brick(rowIndex) {
+      // Higher rows play higher notes.
+      const freq = 300 + (ROWS.length - rowIndex) * 80;
+      tone(freq, 0.12, 'square', 0.12);
+      tone(freq * 2, 0.06, 'triangle', 0.06);
+    },
+    crack() {
+      tone(1600, 0.05, 'square', 0.1);
+      tone(500, 0.15, 'sawtooth', 0.08, 0.03, 250);
+    },
+    start() {
+      [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, 'triangle', 0.15, i * 0.1));
+    },
+    turboEarned() {
+      tone(880, 0.1, 'triangle', 0.12);
+      tone(1320, 0.15, 'triangle', 0.12, 0.08);
+    },
+    turboFire() {
+      tone(200, 0.5, 'sawtooth', 0.1, 0, 1200);
+    },
+    levelUp() {
+      [523, 784, 1047, 1568].forEach((f, i) => tone(f, 0.22, 'triangle', 0.14, i * 0.09));
+    },
+    split() {
+      [1200, 900, 1500, 700, 1800, 1000].forEach((f, i) => tone(f, 0.08, 'square', 0.07, i * 0.04));
+    },
+  };
+
+  // ---------- Drawing helpers ----------
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    ctx.fill();
+  }
+
+  // Draw centered text, shrinking the font if needed so it fits the canvas.
+  function fitText(ctx, text, y, size, weight = 'bold') {
+    let px = size;
+    do {
+      ctx.font = `${weight} ${px}px system-ui, sans-serif`;
+      px -= 2;
+    } while (ctx.measureText(text).width > W - 40 && px > 12);
+    ctx.fillText(text, W / 2, y);
+  }
+
+  function overlay(ctx, title, sub, alpha = 0.7) {
+    ctx.fillStyle = `rgba(10, 10, 25, ${alpha})`;
+    ctx.fillRect(0, 0, W, H);
+    if (!title) return;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#e8e8f0';
+    fitText(ctx, title, H / 2 - 10, 48);
+    ctx.fillStyle = '#a3a5c4';
+    fitText(ctx, sub, H / 2 + 30, 20, 'normal');
+  }
+
+  // ---------- Background ----------
+  // A different color theme per level: gradient stops + two glowing nebula colors.
+  const THEMES = [
+    { sky: ['#1b0640', '#3a0d5c', '#0a1238'], glow: ['255, 92, 170', '90, 140, 255'] },  // violet
+    { sky: ['#021a33', '#063d5c', '#04202e'], glow: ['90, 209, 255', '80, 255, 200'] },  // ocean
+    { sky: ['#2b0420', '#5c0d3d', '#1a0630'], glow: ['255, 92, 122', '255, 180, 80'] },  // magenta
+    { sky: ['#03241a', '#0a4d3b', '#061a2b'], glow: ['126, 224, 126', '90, 209, 255'] }, // emerald
+    { sky: ['#2b1004', '#5c260a', '#2b0414'], glow: ['255, 143, 77', '255, 210, 77'] },  // ember
+  ];
+
+  class Background {
+    constructor() {
+      this.stars = Array.from({ length: 140 }, () => ({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        size: Math.random() * 1.8 + 0.4,
+        speed: Math.random() * 0.25 + 0.05,
+        phase: Math.random() * Math.PI * 2,
+      }));
+      this.rockets = [];
+      this.sparks = [];
+      this.shootingStar = null;
+      this.nextFirework = 0;
+    }
+
+    launchFirework() {
+      this.rockets.push({
+        x: 60 + Math.random() * (W - 120),
+        y: H + 10,
+        vy: -(7 + Math.random() * 3),
+        targetY: 80 + Math.random() * (H * 0.45),
+        hue: Math.floor(Math.random() * 360),
+      });
+    }
+
+    celebrate(count) {
+      for (let i = 0; i < count; i++) setTimeout(() => this.launchFirework(), i * 180);
+    }
+
+    explode(r) {
+      const count = 50 + Math.floor(Math.random() * 30);
+      const ring = Math.random() < 0.4; // some bursts are perfect rings
+      for (let i = 0; i < count; i++) {
+        const a = (i / count) * Math.PI * 2;
+        const s = ring ? 4 : Math.random() * 4.5 + 0.5;
+        this.sparks.push({
+          x: r.x, y: r.y,
+          vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+          life: 1,
+          decay: 0.012 + Math.random() * 0.01,
+          hue: (r.hue + Math.random() * 40 - 20 + 360) % 360,
+        });
+      }
+    }
+
+    draw(ctx, now, dt, level, partying) {
+      const theme = THEMES[(level - 1) % THEMES.length];
+
+      // Sky gradient
+      const sky = ctx.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, theme.sky[0]);
+      sky.addColorStop(0.55, theme.sky[1]);
+      sky.addColorStop(1, theme.sky[2]);
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+
+      // Drifting nebula glows
+      for (let i = 0; i < 3; i++) {
+        const color = theme.glow[i % 2];
+        const x = W / 2 + Math.sin(now / 7000 + i * 2.1) * W * 0.35;
+        const y = H / 2 + Math.cos(now / 9000 + i * 1.7) * H * 0.3;
+        const r = 220 + Math.sin(now / 3000 + i) * 40;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, `rgba(${color}, 0.22)`);
+        g.addColorStop(1, `rgba(${color}, 0)`);
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, W, H);
+      }
+
+      // Twinkling stars slowly drifting down
+      for (const st of this.stars) {
+        st.y += st.speed * dt;
+        if (st.y > H) { st.y = 0; st.x = Math.random() * W; }
+        ctx.globalAlpha = 0.3 + 0.7 * Math.abs(Math.sin(now / 700 + st.phase));
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(st.x, st.y, st.size, st.size);
+      }
+
+      // The occasional shooting star
+      if (!this.shootingStar && Math.random() < 0.004 * dt) {
+        this.shootingStar = { x: Math.random() * W * 0.6, y: Math.random() * H * 0.3, life: 1 };
+      }
+      if (this.shootingStar) {
+        const s = this.shootingStar;
+        s.x += 12 * dt; s.y += 5 * dt; s.life -= 0.025 * dt;
+        const trail = ctx.createLinearGradient(s.x - 90, s.y - 38, s.x, s.y);
+        trail.addColorStop(0, 'rgba(255, 255, 255, 0)');
+        trail.addColorStop(1, `rgba(255, 255, 255, ${Math.max(0, s.life)})`);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = trail;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(s.x - 90, s.y - 38);
+        ctx.lineTo(s.x, s.y);
+        ctx.stroke();
+        if (s.life <= 0 || s.x > W + 100) this.shootingStar = null;
+      }
+
+      // Fireworks: a steady show, and a constant one for a winner
+      if (now > this.nextFirework) {
+        this.launchFirework();
+        this.nextFirework = now + (partying ? 300 : 900 + Math.random() * 1600);
+      }
+      for (let i = this.rockets.length - 1; i >= 0; i--) {
+        const r = this.rockets[i];
+        r.y += r.vy * dt;
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = `hsl(${r.hue}, 100%, 75%)`;
+        ctx.fillRect(r.x - 1.5, r.y, 3, 10);
+        if (r.y <= r.targetY) { this.explode(r); this.rockets.splice(i, 1); }
+      }
+      ctx.lineWidth = 2;
+      for (let i = this.sparks.length - 1; i >= 0; i--) {
+        const p = this.sparks[i];
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.vx *= 0.985; p.vy = p.vy * 0.985 + 0.05 * dt;
+        p.life -= p.decay * dt;
+        if (p.life <= 0) { this.sparks.splice(i, 1); continue; }
+        ctx.globalAlpha = p.life * 0.75;
+        ctx.strokeStyle = `hsl(${p.hue}, 100%, 65%)`;
+        ctx.beginPath();
+        ctx.moveTo(p.x - p.vx * 2, p.y - p.vy * 2);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+  }
+
+  // ---------- One player's game ----------
+  class Game {
+    constructor(boardEl) {
+      this.board = boardEl;
+      this.canvas = boardEl.querySelector('canvas');
+      this.ctx = this.canvas.getContext('2d');
+      this.hud = {};
+      for (const el of boardEl.querySelectorAll('[data-hud]')) this.hud[el.dataset.hud] = el;
+      this.bg = new Background();
+      this.name = '';
+      this.controls = SOLO;
+      this.showBest = true;
+      this.canvas.addEventListener('mousedown', () => {
+        if (app.mode === 'playing' && !app.paused && this.mode === 'serve') this.launch();
+      });
+      this.reset();
+      this.mode = 'idle'; // idle | serve | play | out | won
+    }
+
+    // Fresh game at level 1.
+    reset() {
+      this.score = 0;
+      this.lives = 3;
+      this.level = 1;
+      this.particles = [];
+      this.playTime = 0;     // seconds spent in 'play' mode (excludes pauses)
+      this.combo = 0;        // bricks hit since the ball last touched the paddle
+      this.turboCharges = 0;
+      this.turboLeft = 0;    // seconds of active turbo remaining
+      this.nextFreeTurbo = TURBO_FREE_EVERY;
+      this.message = null;   // short pop-up text, e.g. "LEVEL UP"
+      this.turboPopUntil = 0; // big "TURBO ALLOWED" pop-up shows until this time
+      this.banner = null;    // big start banner, e.g. "LET'S BEGIN!"
+      this.keys = { left: false, right: false };
+      this.paddleW = LEVELS[0].paddleW;
+      this.paddleX = W / 2 - this.paddleW / 2;
+      this.buildBricks();
+      this.resetBall();
+      this.updateHud();
+    }
+
+    levelConfig() {
+      return LEVELS[Math.min(this.level, LEVELS.length) - 1];
+    }
+
+    buildBricks() {
+      const { cols, brickH, paddleW } = this.levelConfig();
+      const brickW = (W - BRICK_GAP * (cols + 1)) / cols;
+      // Shrink the paddle around its current center.
+      const center = this.paddleX + this.paddleW / 2;
+      this.paddleW = paddleW;
+      this.paddleX = Math.max(0, Math.min(W - paddleW, center - paddleW / 2));
+      this.bricks = [];
+      ROWS.forEach((row, r) => {
+        for (let c = 0; c < cols; c++) {
+          this.bricks.push({
+            x: BRICK_GAP + c * (brickW + BRICK_GAP),
+            y: BRICK_TOP + r * (brickH + BRICK_GAP),
+            w: brickW,
+            h: brickH,
+            color: row.color,
+            points: row.points,
+            row: r,
+            alive: true,
+            splitter: Math.random() < SPLITTER_CHANCE,
+            born: -1,
+          });
+        }
+      });
+    }
+
+    speed() {
+      return BASE_SPEED + (this.level - 1) * 0.8;
+    }
+
+    scheduleSplit() {
+      this.nextSplit = this.playTime + SPLIT_MIN + Math.random() * (SPLIT_MAX - SPLIT_MIN);
+    }
+
+    resetBall() {
+      this.mode = 'serve';
+      this.combo = 0;
+      this.turboLeft = 0;
+      this.balls = [{
+        x: this.paddleX + this.paddleW / 2, y: PADDLE_Y - BALL_R - 1,
+        vx: 0, vy: 0, r: BALL_R, color: '#5ad1ff', main: true,
+      }];
+    }
+
+    launch() {
+      const b = this.balls[0];
+      const angle = (Math.random() * 0.6 - 0.3) - Math.PI / 2; // mostly upward
+      b.vx = Math.cos(angle) * this.speed();
+      b.vy = Math.sin(angle) * this.speed();
+      this.mode = 'play';
+      this.scheduleSplit();
+    }
+
+    // The player's action key: launch when serving, otherwise fire turbo.
+    action() {
+      if (this.mode === 'serve') this.launch();
+      else this.useTurbo();
+    }
+
+    nextLevel() {
+      this.level++;
+      this.bg.celebrate(6);
+      this.buildBricks();
+      this.resetBall();
+      this.updateHud();
+      const praise = randomPraise(this.name);
+      this.showMessage(`LEVEL UP! → LEVEL ${this.level}`, '#ffd24d', praise, 2600);
+      sfx.levelUp();
+      speak(praise);
+    }
+
+    finish(result) {
+      this.mode = result; // 'out' or 'won'
+      app.checkEnd();
+    }
+
+    updateHud() {
+      if (this.score > best) {
+        best = this.score;
+        storage.set('breakout-best', best);
+      }
+      this.hud.name.textContent = this.name;
+      this.hud.score.textContent = this.score;
+      this.hud.lives.textContent = this.lives;
+      this.hud.level.textContent = this.level;
+      this.hud.best.textContent = best;
+      this.hud['best-wrap'].hidden = !this.showBest;
+      this.hud.turbo.textContent = this.turboCharges ? '⚡'.repeat(this.turboCharges) : '–';
+    }
+
+    showMessage(text, color, sub = '', duration = 1500) {
+      this.message = { text, color, sub, until: performance.now() + duration };
+    }
+
+    burst(x, y, color, count = 12, power = 3) {
+      for (let i = 0; i < count; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const s = Math.random() * power + 1;
+        this.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1, color });
+      }
+    }
+
+    // ----- Splitter bricks -----
+    // True if a w×h rectangle at (x, y) is clear of every brick and ball, with some spacing.
+    spotIsFree(x, y, w, h) {
+      const PAD = 10;
+      for (const o of this.bricks) {
+        if (!o.alive) continue;
+        if (x < o.x + o.w + PAD && x + w + PAD > o.x && y < o.y + o.h + PAD && y + h + PAD > o.y) return false;
+      }
+      for (const b of this.balls) {
+        if (b.x > x - 30 && b.x < x + w + 30 && b.y > y - 30 && b.y < y + h + 30) return false;
+      }
+      return true;
+    }
+
+    // Shatter a splitter brick into smaller pieces that fly off to random empty spots.
+    splitBrick(br) {
+      const w = Math.max(16, br.w * 0.55);
+      const h = br.h;
+      for (let i = 0; i < SPLIT_PIECES; i++) {
+        let spot = null;
+        for (let tries = 0; tries < 40 && !spot; tries++) {
+          const x = BRICK_GAP + Math.random() * (W - w - BRICK_GAP * 2);
+          const y = BRICK_TOP + Math.random() * (PIECE_ZONE_BOTTOM - BRICK_TOP - h);
+          if (this.spotIsFree(x, y, w, h)) spot = { x, y };
+        }
+        if (!spot) continue; // board is too crowded; skip this piece
+        this.bricks.push({
+          ...br,
+          x: spot.x,
+          y: spot.y,
+          fromX: br.x + br.w / 2 - w / 2,
+          fromY: br.y,
+          w,
+          h,
+          points: Math.round(br.points / 2),
+          alive: true,
+          splitter: false,
+          born: this.playTime,
+        });
+      }
+      this.burst(br.x + br.w / 2, br.y + br.h / 2, '#ffffff', 10, 2);
+      sfx.crack();
+    }
+
+    // ----- Turbo -----
+    earnTurbo() {
+      if (this.turboCharges >= TURBO_MAX) return;
+      this.turboCharges++;
+      this.updateHud();
+      this.turboPopUntil = performance.now() + 2200;
+      sfx.turboEarned();
+      speak('Turbo allowed!');
+    }
+
+    useTurbo() {
+      if (this.mode !== 'play' || this.turboCharges === 0 || this.turboLeft > 0) return;
+      this.turboCharges--;
+      this.turboLeft = TURBO_DURATION;
+      this.updateHud();
+      this.showMessage('TURBO! x2 POINTS', '#ff8f4d');
+      sfx.turboFire();
+    }
+
+    // ----- Ball split -----
+    splitBall() {
+      const main = this.balls.find(b => b.main);
+      if (!main) return;
+      this.balls = this.balls.filter(b => b !== main);
+      for (let i = 0; i < SPLIT_COUNT; i++) {
+        // Fan the mini balls out, all heading upward so none drops straight away.
+        const angle = -Math.PI / 2 + (i - (SPLIT_COUNT - 1) / 2) * 0.35;
+        this.balls.push({
+          x: main.x, y: main.y,
+          vx: Math.cos(angle) * this.speed(), vy: Math.sin(angle) * this.speed(),
+          r: MINI_R, color: MINI_COLORS[i % MINI_COLORS.length], main: false,
+        });
+      }
+      MINI_COLORS.forEach(c => this.burst(main.x, main.y, c, 6, 4));
+      this.showMessage('SPLIT!', '#7ee07e');
+      sfx.split();
+    }
+
+    // ----- Update -----
+    update(dt) {
+      // Particles keep animating in every mode
+      this.particles = this.particles.filter(p => {
+        p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.life -= 0.03;
+        return p.life > 0;
+      });
+
+      if (this.mode !== 'serve' && this.mode !== 'play') return;
+
+      if (this.keys.left) this.paddleX -= PADDLE_SPEED;
+      if (this.keys.right) this.paddleX += PADDLE_SPEED;
+      this.paddleX = Math.max(0, Math.min(W - this.paddleW, this.paddleX));
+
+      if (this.mode === 'serve') {
+        const b = this.balls[0];
+        b.x = this.paddleX + this.paddleW / 2;
+        b.y = PADDLE_Y - b.r - 1;
+        return;
+      }
+
+      // Timers
+      this.playTime += dt;
+      if (this.turboLeft > 0) this.turboLeft = Math.max(0, this.turboLeft - dt);
+      if (this.playTime >= this.nextFreeTurbo) {
+        this.nextFreeTurbo += TURBO_FREE_EVERY;
+        this.earnTurbo();
+      }
+      if (this.playTime >= this.nextSplit) {
+        this.splitBall();
+        this.scheduleSplit();
+      }
+
+      // Keep every ball at the current target speed (turbo speeds them all up).
+      const target = this.speed() * (this.turboLeft > 0 ? TURBO_SPEED : 1);
+      for (const b of this.balls) {
+        const v = Math.hypot(b.vx, b.vy) || 1;
+        b.vx = b.vx / v * target;
+        b.vy = b.vy / v * target;
+      }
+
+      // Move in small steps so a fast ball never tunnels through bricks
+      let crossedLine = false;
+      for (const b of this.balls) {
+        const steps = Math.ceil(target / 4);
+        for (let i = 0; i < steps; i++) {
+          b.x += b.vx / steps;
+          b.y += b.vy / steps;
+          const result = this.stepCollisions(b);
+          if (result === 'lost') { b.dead = true; break; }
+          if (result === 'levelup') { crossedLine = true; break; }
+          if (result === 'hit') break;
+        }
+        if (crossedLine) break;
+      }
+
+      if (crossedLine) {
+        if (this.level >= MAX_LEVEL) this.finish('won');
+        else this.nextLevel();
+        return;
+      }
+
+      this.balls = this.balls.filter(b => !b.dead);
+      if (this.balls.length === 0) {
+        this.lives--;
+        this.updateHud();
+        if (this.lives <= 0) this.finish('out');
+        else this.resetBall();
+        return;
+      }
+
+      if (this.bricks.every(br => !br.alive)) {
+        if (this.level >= MAX_LEVEL) this.finish('won');
+        else this.nextLevel();
+      }
+    }
+
+    // Returns 'lost' if the ball fell out, 'levelup' if it got past the top line,
+    // 'hit' if it broke a brick, otherwise nothing.
+    stepCollisions(b) {
+      const R = b.r;
+
+      // Walls
+      if (b.x - R < 0) { b.x = R; b.vx = Math.abs(b.vx); }
+      if (b.x + R > W) { b.x = W - R; b.vx = -Math.abs(b.vx); }
+      if (b.y - R < 0) { b.y = R; b.vy = Math.abs(b.vy); }
+
+      if (b.y - R > H) return 'lost';
+      if (b.y < LEVEL_LINE_Y) return 'levelup';
+
+      // Paddle: bounce angle depends on where the ball hits
+      if (b.vy > 0 &&
+          b.y + R >= PADDLE_Y && b.y + R <= PADDLE_Y + PADDLE_H + Math.abs(b.vy) &&
+          b.x >= this.paddleX - R && b.x <= this.paddleX + this.paddleW + R) {
+        const hit = (b.x - (this.paddleX + this.paddleW / 2)) / (this.paddleW / 2); // -1..1
+        const angle = Math.max(-1, Math.min(1, hit)) * (Math.PI / 3); // up to 60°
+        const s = Math.hypot(b.vx, b.vy);
+        b.vx = Math.sin(angle) * s;
+        b.vy = -Math.cos(angle) * s;
+        b.y = PADDLE_Y - R;
+        this.combo = 0;
+      }
+
+      // Bricks
+      for (const br of this.bricks) {
+        if (!br.alive || this.playTime - br.born < PIECE_FLY) continue;
+        const nearestX = Math.max(br.x, Math.min(b.x, br.x + br.w));
+        const nearestY = Math.max(br.y, Math.min(b.y, br.y + br.h));
+        const dx = b.x - nearestX, dy = b.y - nearestY;
+        if (dx * dx + dy * dy > R * R) continue;
+
+        br.alive = false;
+        if (br.splitter) this.splitBrick(br); else sfx.brick(br.row);
+        const multiplier = this.turboLeft > 0 ? 2 : 1;
+        this.score += br.points * this.level * multiplier;
+        this.burst(br.x + br.w / 2, br.y + br.h / 2, br.color);
+        this.updateHud();
+
+        // Two bricks in one rally (without touching the paddle) = a chance at turbo
+        this.combo++;
+        if (this.combo % 2 === 0 && Math.random() < TURBO_COMBO_CHANCE) this.earnTurbo();
+
+        // Bounce off the side with the smallest overlap
+        const overlapX = Math.min(b.x + R - br.x, br.x + br.w - (b.x - R));
+        const overlapY = Math.min(b.y + R - br.y, br.y + br.h - (b.y - R));
+        if (overlapX < overlapY) b.vx = -b.vx; else b.vy = -b.vy;
+        return 'hit';
+      }
+    }
+
+    // ----- Draw -----
+    draw(now, frameDt) {
+      const ctx = this.ctx;
+      const turbo = this.turboLeft > 0;
+      this.bg.draw(ctx, now, frameDt, this.level, this.mode === 'won');
+
+      // Level-up line above the bricks
+      ctx.strokeStyle = '#ffd24d';
+      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(now / 250);
+      ctx.lineWidth = 2;
+      ctx.setLineDash([10, 8]);
+      ctx.beginPath();
+      ctx.moveTo(0, LEVEL_LINE_Y);
+      ctx.lineTo(W, LEVEL_LINE_Y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#ffd24d';
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 12px system-ui, sans-serif';
+      ctx.fillText('▲ LEVEL UP', W - 10, LEVEL_LINE_Y - 8);
+      ctx.globalAlpha = 1;
+
+      // Bricks
+      for (const br of this.bricks) {
+        if (!br.alive) continue;
+        const { w, h } = br;
+        let x = br.x, y = br.y;
+        const flying = br.born >= 0 && this.playTime - br.born < PIECE_FLY;
+        if (flying) {
+          // Pieces fly from the broken brick to their new spot, easing out as they land.
+          const t = (this.playTime - br.born) / PIECE_FLY;
+          const ease = 1 - (1 - t) * (1 - t);
+          x = br.fromX + (br.x - br.fromX) * ease;
+          y = br.fromY + (br.y - br.fromY) * ease;
+          ctx.globalAlpha = 0.6;
+        }
+        ctx.fillStyle = br.color;
+        roundRect(ctx, x, y, w, h, 4);
+        ctx.globalAlpha = 1;
+        if (br.splitter) {
+          // A white crack down the middle marks a brick that will split.
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x + w / 2, y + 2);
+          ctx.lineTo(x + w / 2 - 3, y + h / 2);
+          ctx.lineTo(x + w / 2 + 3, y + h / 2);
+          ctx.lineTo(x + w / 2, y + h - 2);
+          ctx.stroke();
+        }
+      }
+
+      // Particles
+      for (const p of this.particles) {
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+      }
+      ctx.globalAlpha = 1;
+
+      // Paddle
+      ctx.fillStyle = turbo ? '#ff8f4d' : '#e8e8f0';
+      roundRect(ctx, this.paddleX, PADDLE_Y, this.paddleW, PADDLE_H, 7);
+
+      // Balls (turbo leaves a fiery trail and glows orange)
+      for (const b of this.balls) {
+        const color = turbo ? '#ff8f4d' : b.color;
+        if (turbo && this.mode === 'play' && !app.paused) {
+          this.particles.push({ x: b.x, y: b.y, vx: 0, vy: 0, life: 0.6, color: '#ffd24d' });
+        }
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 15;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+
+      // Turbo time bar
+      if (turbo) {
+        ctx.fillStyle = 'rgba(255, 143, 77, 0.25)';
+        ctx.fillRect(W / 2 - 150, 20, 300, 10);
+        ctx.fillStyle = '#ff8f4d';
+        ctx.fillRect(W / 2 - 150, 20, 300 * (this.turboLeft / TURBO_DURATION), 10);
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 14px system-ui, sans-serif';
+        ctx.fillText('TURBO', W / 2, 50);
+      }
+
+      // Big "TURBO ALLOWED" pop-up when a charge is earned
+      if (now < this.turboPopUntil) {
+        const left = this.turboPopUntil - now;
+        const age = 2200 - left;
+        const scale = age < 250 ? 0.5 + 0.7 * (age / 250) : 1.2 - 0.2 * Math.min(1, (age - 250) / 150);
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, left / 400);
+        ctx.translate(W / 2, H / 2 + 20);
+        ctx.scale(scale, scale);
+        ctx.fillStyle = 'rgba(255, 143, 77, 0.18)';
+        ctx.strokeStyle = '#ff8f4d';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.roundRect(-230, -60, 460, 120, 18);
+        ctx.fill();
+        ctx.stroke();
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ff8f4d';
+        ctx.shadowColor = '#ff8f4d';
+        ctx.shadowBlur = 20;
+        ctx.font = 'bold 44px system-ui, sans-serif';
+        ctx.fillText('⚡ TURBO ALLOWED ⚡', 0, 2);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#e8e8f0';
+        ctx.font = '18px system-ui, sans-serif';
+        ctx.fillText(`Press ${this.controls.label} whenever you want to use it`, 0, 36);
+        ctx.restore();
+      } else if (this.turboCharges > 0 && this.turboLeft === 0 && this.mode === 'play') {
+        // Small blinking reminder while a charge is waiting to be used
+        ctx.globalAlpha = 0.55 + 0.45 * Math.sin(now / 200);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ff8f4d';
+        ctx.font = 'bold 16px system-ui, sans-serif';
+        ctx.fillText(`⚡ TURBO x${this.turboCharges} READY · press ${this.controls.label}`, W / 2, PADDLE_Y - 30);
+        ctx.globalAlpha = 1;
+      }
+
+      // Pop-up message
+      if (this.message && now < this.message.until) {
+        ctx.globalAlpha = Math.min(1, (this.message.until - now) / 400);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = this.message.color;
+        fitText(ctx, this.message.text, H / 2 + 110, 32);
+        if (this.message.sub) {
+          ctx.fillStyle = '#ffffff';
+          fitText(ctx, this.message.sub, H / 2 + 145, 22, '600');
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // Start banner, or the launch hint while waiting to serve
+      if (this.banner && now < this.banner.until) {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffd24d';
+        fitText(ctx, this.banner.text, H / 2 + 40, 56);
+      } else if (this.mode === 'serve' && app.mode === 'playing') {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#a3a5c4';
+        ctx.font = '18px system-ui, sans-serif';
+        ctx.fillText(`Press ${this.controls.launchLabel} or ${this.controls.label} to launch`, W / 2, H / 2 + 80);
+      }
+
+      // Screen overlays
+      if (app.mode === 'menu') {
+        overlay(ctx, '', '', 0.45);
+      } else if (this.mode === 'out') {
+        overlay(ctx, 'OUT OF LIVES', `Final score ${this.score} · waiting for the other player…`);
+      } else if (app.paused) {
+        overlay(ctx, 'PAUSED', 'Press P to resume');
+      }
+    }
+  }
+
+  function randomPraise(name) {
+    const lines = name ? [
+      `${name}, you're mastering the game!`,
+      `Amazing, ${name}! You're mastering it!`,
+      `${name} is on fire!`,
+      `Unstoppable, ${name}!`,
+      `Look at you go, ${name}!`,
+    ] : [
+      "You're mastering the game!",
+      "Amazing! You're mastering it!",
+      "You're on fire!",
+      'Unstoppable!',
+    ];
+    return lines[Math.floor(Math.random() * lines.length)];
+  }
+
+  // ---------- App: menu, modes and results ----------
+  const menuLayer = document.getElementById('menu-layer');
+  const menuTitle = document.getElementById('menu-title');
+  const menuSub = document.getElementById('menu-sub');
+  const menuControls = document.getElementById('menu-controls');
+  const menuRules = document.getElementById('menu-rules');
+  const menuForm = document.getElementById('menu-form');
+  const modeButtons = document.querySelectorAll('.mode-toggle button');
+  const name1 = document.getElementById('name1');
+  const name2 = document.getElementById('name2');
+  const name1Label = document.getElementById('name1-label');
+  const name2Row = document.getElementById('name2-row');
+  const startBtn = document.getElementById('start-btn');
+
+  const app = {
+    mode: 'menu', // menu | playing
+    paused: false,
+    players: Number(storage.get('breakout-players')) === 2 ? 2 : 1,
+    games: [],
+
+    activeGames() {
+      return this.games.slice(0, this.players);
+    },
+
+    setPlayers(n) {
+      this.players = n;
+      storage.set('breakout-players', n);
+      document.body.classList.toggle('two-players', n === 2);
+      this.games[1].board.hidden = n !== 2;
+      name2Row.hidden = n !== 2;
+      name1Label.textContent = n === 2 ? 'Player 1' : 'Name';
+      name1.placeholder = n === 2 ? 'Player 1 name' : 'Type your name';
+      modeButtons.forEach(b => b.classList.toggle('active', Number(b.dataset.players) === n));
+      menuRules.innerHTML = n === 2 ? `
+        <h3>🏆 How to win</h3>
+        <ul>
+          <li>Each player has their own board and <b>3 lives</b>.</li>
+          <li>Get the ball past the <b>yellow line</b> above the bricks to level up.</li>
+          <li>The <b>first player to beat level ${MAX_LEVEL}</b> wins right away.</li>
+          <li>If both players run out of lives, the <b>higher score wins</b> (same score = tie).</li>
+        </ul>` : `
+        <h3>🏆 How to win</h3>
+        <ul>
+          <li>You have <b>3 lives</b> — don't let the ball fall.</li>
+          <li>Get the ball past the <b>yellow line</b> above the bricks to level up.</li>
+          <li>Beat <b>level ${MAX_LEVEL}</b> to win the game.</li>
+        </ul>`;
+      menuControls.innerHTML = n === 2 ? `
+        <h3>🎮 Controls</h3>
+        <b>Player 1</b> (left): <kbd>A</kbd> <kbd>D</kbd> move · <kbd>Left Shift</kbd> launch · <kbd>W</kbd> turbo<br>
+        <b>Player 2</b> (right): <kbd>←</kbd> <kbd>→</kbd> move · <kbd>Right Shift</kbd> launch · <kbd>↑</kbd> turbo<br>
+        <kbd>P</kbd> pause` : `
+        <h3>🎮 Controls</h3>
+        <kbd>←</kbd> <kbd>→</kbd> move · <kbd>Space</kbd> launch · <kbd>↑</kbd> turbo · <kbd>P</kbd> pause`;
+    },
+
+    showMenu(title, sub) {
+      this.mode = 'menu';
+      this.paused = false;
+      menuTitle.textContent = title;
+      menuSub.textContent = sub;
+      menuLayer.hidden = false;
+      // Names are already filled in after a game, so jump straight to START.
+      if (title === 'Ready to play?') name1.focus(); else startBtn.focus();
+    },
+
+    start() {
+      ensureAudio();
+      const n1 = name1.value.trim(), n2 = name2.value.trim();
+      storage.set('breakout-name', n1);
+      storage.set('breakout-name2', n2);
+      const two = this.players === 2;
+      const [g1, g2] = this.games;
+
+      g1.name = two ? (n1 || 'Player 1') : n1;
+      g1.controls = two ? P1_KEYS : SOLO;
+      g1.showBest = !two;
+      g2.name = n2 || 'Player 2';
+      g2.controls = P2_KEYS;
+      g2.showBest = false;
+
+      menuLayer.hidden = true;
+      if (document.activeElement) document.activeElement.blur();
+      this.mode = 'playing';
+      this.paused = false;
+
+      // One player hears their name; two players get a general welcome.
+      const bannerText = two ? 'GAME BEGINS!' : (n1 ? `LET'S BEGIN, ${n1.toUpperCase()}!` : "LET'S BEGIN!");
+      for (const g of this.activeGames()) {
+        g.reset();
+        g.mode = 'serve';
+        g.banner = { text: bannerText, until: performance.now() + 2200 };
+      }
+      sfx.start();
+      speak(two ? 'Welcome! The game begins!' : (n1 ? `Let's begin, ${n1}!` : "Let's begin!"));
+    },
+
+    // Called whenever a game finishes; decides whether the match is over.
+    checkEnd() {
+      const games = this.activeGames();
+      if (this.players === 1) {
+        const g = games[0];
+        if (g.mode === 'won') this.showMenu(g.name ? `${g.name.toUpperCase()} WINS!` : 'YOU WIN!', `Score ${g.score}`);
+        else if (g.mode === 'out') this.showMenu('GAME OVER', `Score ${g.score}`);
+        return;
+      }
+
+      const scores = games.map(g => `${g.name} ${g.score}`).join(' · ');
+      const champion = games.find(g => g.mode === 'won');
+      if (champion) {
+        // Beating the last level wins the match immediately.
+        for (const g of games) if (g !== champion && g.mode !== 'out') g.mode = 'idle';
+        this.showMenu(`${champion.name.toUpperCase()} WINS!`, `Beat level ${MAX_LEVEL} first · ${scores}`);
+        speak(`${champion.name} wins!`);
+        return;
+      }
+      if (games.every(g => g.mode === 'out')) {
+        const [a, b] = games;
+        if (a.score === b.score) {
+          this.showMenu("IT'S A TIE!", scores);
+          speak("It's a tie!");
+        } else {
+          const winner = a.score > b.score ? a : b;
+          winner.mode = 'won'; // fireworks for the winner
+          this.showMenu(`${winner.name.toUpperCase()} WINS!`, `Higher score · ${scores}`);
+          speak(`${winner.name} wins!`);
+        }
+      }
+    },
+  };
+
+  app.games = [new Game(document.getElementById('board1')), new Game(document.getElementById('board2'))];
+  name1.value = storage.get('breakout-name');
+  name2.value = storage.get('breakout-name2');
+  app.setPlayers(app.players);
+
+  modeButtons.forEach(b => b.addEventListener('click', () => {
+    app.setPlayers(Number(b.dataset.players));
+    name1.focus();
+  }));
+  menuForm.addEventListener('submit', e => { e.preventDefault(); app.start(); });
+
+  // ---------- Keyboard ----------
+  window.addEventListener('keydown', e => {
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT') return; // typing a name, not playing
+    if (tag === 'BUTTON' && (e.code === 'Space' || e.code === 'Enter')) return; // let the button click
+
+    if (app.mode === 'menu') {
+      if (e.code === 'Space' || e.code === 'Enter') { app.start(); e.preventDefault(); }
+      return;
+    }
+
+    ensureAudio();
+    if (e.code === 'KeyP') { app.paused = !app.paused; return; }
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (app.paused) { app.paused = false; return; }
+    }
+    if (app.paused) return;
+
+    for (const g of app.activeGames()) {
+      const c = g.controls;
+      if (e.code === c.launch && g.mode === 'serve') { g.launch(); e.preventDefault(); }
+      if (e.code === c.left) { g.keys.left = true; e.preventDefault(); }
+      if (e.code === c.right) { g.keys.right = true; e.preventDefault(); }
+      if (e.code === c.action && !e.repeat) { g.action(); e.preventDefault(); }
+    }
+  });
+
+  window.addEventListener('keyup', e => {
+    for (const g of app.games) {
+      if (e.code === g.controls.left) g.keys.left = false;
+      if (e.code === g.controls.right) g.keys.right = false;
+    }
+  });
+
+  // ---------- Main loop ----------
+  let lastTime = performance.now();
+
+  function loop() {
+    const now = performance.now();
+    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
+    const frameDt = dt * 60; // in 60fps frames, for the background animation
+
+    for (const g of app.activeGames()) {
+      if (app.mode === 'playing' && !app.paused) g.update(dt);
+      g.draw(now, frameDt);
+    }
+    requestAnimationFrame(loop);
+  }
+
+  app.showMenu('Ready to play?', 'Choose a mode and enter your name');
+  loop();
+})();
+</script>
+</body>
+</html>
